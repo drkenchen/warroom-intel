@@ -1,0 +1,44 @@
+{
+  "name": "戰情室 WARROOM",
+  "short_name": "WARROOM",
+  "description": "全球危機情報儀表板 — 即時監控全球重大事件",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#080c18",
+  "theme_color": "#080c18",
+  "lang": "zh-TW",
+  "categories": ["news", "utilities"],
+  "icons": [
+    {
+      "src": "icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "全球危機",
+      "url": "/?tab=global",
+      "description": "查看全球重大事件"
+    },
+    {
+      "name": "台海專題",
+      "url": "/?tab=taiwan",
+      "description": "台海即時情報"
+    },
+    {
+      "name": "AI分析",
+      "url": "/?tab=ai",
+      "description": "AI情報綜合分析"
+    }
+  ]
+}

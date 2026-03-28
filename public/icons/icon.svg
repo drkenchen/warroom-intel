@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Background -->
+  <rect width="512" height="512" rx="80" fill="#080c18"/>
+  <!-- Outer radar rings -->
+  <circle cx="256" cy="256" r="210" fill="none" stroke="#1a3a6a" stroke-width="2"/>
+  <circle cx="256" cy="256" r="158" fill="none" stroke="#1a3a6a" stroke-width="1.5"/>
+  <circle cx="256" cy="256" r="106" fill="none" stroke="#1e4080" stroke-width="2"/>
+  <!-- Crosshair -->
+  <line x1="256" y1="38"  x2="256" y2="96"  stroke="#2a5ca0" stroke-width="3" stroke-linecap="round"/>
+  <line x1="256" y1="416" x2="256" y2="474" stroke="#2a5ca0" stroke-width="3" stroke-linecap="round"/>
+  <line x1="38"  y1="256" x2="96"  y2="256" stroke="#2a5ca0" stroke-width="3" stroke-linecap="round"/>
+  <line x1="416" y1="256" x2="474" y2="256" stroke="#2a5ca0" stroke-width="3" stroke-linecap="round"/>
+  <!-- Diagonal tick marks -->
+  <line x1="182" y1="62"  x2="195" y2="84"  stroke="#1a3a6a" stroke-width="1.5"/>
+  <line x1="330" y1="62"  x2="317" y2="84"  stroke="#1a3a6a" stroke-width="1.5"/>
+  <line x1="182" y1="450" x2="195" y2="428" stroke="#1a3a6a" stroke-width="1.5"/>
+  <line x1="330" y1="450" x2="317" y2="428" stroke="#1a3a6a" stroke-width="1.5"/>
+  <!-- Inner target circle -->
+  <circle cx="256" cy="256" r="54" fill="none" stroke="#c0392b" stroke-width="3"/>
+  <!-- Target dot -->
+  <circle cx="256" cy="256" r="22" fill="#e74c3c"/>
+  <!-- Sweep arc suggestion -->
+  <path d="M256,256 L256,202 A54,54 0 0,1 303,270 Z" fill="rgba(231,76,60,0.15)"/>
+  <!-- Corner brackets (tactical UI) -->
+  <path d="M 60,60 L 60,100 M 60,60 L 100,60" stroke="#2a5ca0" stroke-width="4" fill="none" stroke-linecap="round"/>
+  <path d="M 452,60 L 452,100 M 452,60 L 412,60" stroke="#2a5ca0" stroke-width="4" fill="none" stroke-linecap="round"/>
+  <path d="M 60,452 L 60,412 M 60,452 L 100,452" stroke="#2a5ca0" stroke-width="4" fill="none" stroke-linecap="round"/>
+  <path d="M 452,452 L 452,412 M 452,452 L 412,452" stroke="#2a5ca0" stroke-width="4" fill="none" stroke-linecap="round"/>
+  <!-- W text -->
+  <text x="256" y="374" text-anchor="middle" font-family="monospace" font-weight="700" font-size="36" fill="#3b7dd8" letter-spacing="6">WARROOM</text>
+</svg>

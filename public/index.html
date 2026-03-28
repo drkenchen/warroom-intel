@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="全球危機情報儀表板 — 即時監控全球重大事件" />
+  <title>戰情室 WARROOM</title>
+
+  <!-- PWA -->
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#080c18" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="WARROOM" />
+  <link rel="apple-touch-icon" href="icons/icon.svg" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+
+<!-- ── Header ─────────────────────────────────────────────────────────────── -->
+<header class="header">
+  <div class="header-inner">
+    <div class="logo">
+      <span class="logo-icon">◈</span>
+      <span class="logo-text">WARROOM</span>
+      <span class="logo-sub" data-i18n="logo_sub">全球危機情報</span>
+    </div>
+    <div class="status-bar">
+      <div class="status-item" id="status-critical">
+        <span class="dot dot-critical"></span>
+        <span class="count" id="count-critical">—</span>
+        <span class="label" data-i18n="lbl_critical">重大</span>
+      </div>
+      <div class="status-item" id="status-high">
+        <span class="dot dot-high"></span>
+        <span class="count" id="count-high">—</span>
+        <span class="label" data-i18n="lbl_high">高危</span>
+      </div>
+      <div class="status-item" id="status-medium">
+        <span class="dot dot-medium"></span>
+        <span class="count" id="count-medium">—</span>
+        <span class="label" data-i18n="lbl_medium">中危</span>
+      </div>
+      <div class="status-item">
+        <span class="refresh-time" id="refresh-time" data-i18n="lbl_loading">載入中...</span>
+      </div>
+    </div>
+    <button class="lang-toggle-btn" id="lang-toggle-btn"
+            onclick="setLang(LANG_STATE.current==='zh'?'en':'zh')">EN</button>
+    <button class="refresh-btn" id="refresh-btn" title="手動更新">
+      <span class="refresh-icon">⟳</span>
+    </button>
+  </div>
+</header>
+
+<!-- ── Navigation ─────────────────────────────────────────────────────────── -->
+<nav class="nav">
+  <button class="nav-btn active" data-tab="global">
+    <span class="nav-icon">⬡</span> <span data-i18n="nav_global">全球危機</span>
+  </button>
+  <button class="nav-btn" data-tab="taiwan">
+    <span class="nav-icon nav-taiwan">◉</span> <span data-i18n="nav_taiwan">台海專題</span>
+  </button>
+  <button class="nav-btn" data-tab="hotspots">
+    <span class="nav-icon">◈</span> <span data-i18n="nav_hotspots">危機熱點</span>
+  </button>
+  <button class="nav-btn nav-ai" data-tab="ai">
+    <span class="nav-icon">✦</span> <span data-i18n="nav_ai">AI分析</span>
+  </button>
+  <button class="nav-btn" data-tab="sources">
+    <span class="nav-icon">◎</span> <span data-i18n="nav_sources">消息來源</span>
+  </button>
+</nav>
+
+<!-- ── Main Content ────────────────────────────────────────────────────────── -->
+<main class="main">
+
+  <!-- Global Crisis Tab -->
+  <section id="tab-global" class="tab-content active">
+
+    <!-- Hotspot Map Panel -->
+    <div class="map-panel" id="map-panel">
+      <div class="map-panel-header">
+        <span class="map-panel-title">🌍 <span data-i18n="nav_hotspots">危機熱點</span></span>
+        <div class="map-legend">
+          <span class="map-legend-item"><span class="map-dot" style="background:#ff2d55"></span><span data-i18n="lbl_critical">重大</span></span>
+          <span class="map-legend-item"><span class="map-dot" style="background:#ff6b00"></span><span data-i18n="lbl_high">高危</span></span>
+          <span class="map-legend-item"><span class="map-dot" style="background:#ffd60a"></span><span data-i18n="lbl_medium">中危</span></span>
+          <span class="map-legend-item map-event-count" id="map-event-count"></span>
+        </div>
+        <button class="map-collapse-btn" id="map-collapse-btn" title="收起/展開地圖">▲</button>
+      </div>
+      <div id="world-map"></div>
+    </div>
+
+    <div class="section-header">
+      <h2 data-i18n="h_global">全球重大事件</h2>
+      <div class="filter-row">
+        <button class="filter-btn active" data-severity="all" data-i18n="filter_all">全部</button>
+        <button class="filter-btn" data-severity="critical" data-i18n="filter_critical">重大</button>
+        <button class="filter-btn" data-severity="high" data-i18n="filter_high">高危</button>
+        <button class="filter-btn" data-severity="medium" data-i18n="filter_medium">中危</button>
+        <select class="region-select" id="region-filter">
+          <option value="all" data-i18n="region_all">所有地區</option>
+        </select>
+        <select class="lang-select" id="lang-filter">
+          <option value="all">中英文</option>
+          <option value="zh">僅中文</option>
+          <option value="en">僅英文</option>
+        </select>
+      </div>
+    </div>
+    <div class="events-list" id="global-events"></div>
+  </section>
+
+  <!-- Taiwan Strait Tab -->
+  <section id="tab-taiwan" class="tab-content">
+
+    <!-- Row 1: Tension Gauge -->
+    <div class="tw-top-row">
+      <div class="taiwan-status-box">
+        <div class="taiwan-label" data-i18n="tw_tension">◉ 台海緊張指數</div>
+        <div class="gauge-bar" style="margin:10px 0 6px">
+          <div class="gauge-fill" id="gauge-fill" style="width:0%"></div>
+        </div>
+        <div class="gauge-value" id="gauge-value" data-i18n="calculating">計算中...</div>
+      </div>
+      <div class="tw-ai-box">
+        <div class="taiwan-label" data-i18n="tw_ai_label">✦ AI 深度分析</div>
+        <p class="tw-ai-desc" data-i18n="tw_ai_desc">使用 AI 對台海局勢進行六面向深度分析：解放軍行動、灰色地帶戰術、美日嚇阻評估、情境風險、早期預警信號。</p>
+        <button class="btn-analyze tw-ai-btn" onclick="AI.analyzeTaiwan(State.events)">
+          <span data-i18n="tw_ai_btn">啟動台海深度分析</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- MND Daily PLA Report -->
+    <div class="tw-section-title" data-i18n="tw_mnd">▌ 國防部每日共軍動態</div>
+    <div id="taiwan-mnd-summary"></div>
+
+    <!-- Row 2: Threat Dimensions -->
+    <div class="tw-section-title" data-i18n="tw_threat">▌ 威脅面向分析</div>
+    <div class="tw-dims-grid" id="taiwan-threat-dims"></div>
+
+    <!-- Row 3: Invasion Scenarios -->
+    <div class="tw-section-title" data-i18n="tw_scenario">▌ 情境預測模型（未來12個月）</div>
+    <div class="tw-scenarios-list" id="taiwan-scenarios"></div>
+
+    <!-- Row 4: Watch Indicators -->
+    <div class="tw-section-title" data-i18n="tw_indicators">▌ 關鍵監控指標</div>
+    <div class="taiwan-indicators-box">
+      <div class="taiwan-indicators" id="taiwan-indicators"></div>
+    </div>
+
+    <!-- Row 5: Latest Events -->
+    <div class="tw-section-title" data-i18n="tw_events">▌ 最新台海情報事件</div>
+    <div class="events-list" id="taiwan-events"></div>
+
+    <!-- Row 6: Authoritative Sources -->
+    <div class="tw-section-title" data-i18n="tw_sources">▌ 權威情報來源</div>
+    <div id="taiwan-auth-sources"></div>
+
+  </section>
+
+  <!-- Hotspots Tab -->
+  <section id="tab-hotspots" class="tab-content">
+    <div class="section-header">
+      <h2 data-i18n="h_hotspots">全球危機熱點分析</h2>
+    </div>
+    <div class="hotspots-grid" id="hotspots-grid"></div>
+  </section>
+
+  <!-- Sources Tab -->
+  <section id="tab-sources" class="tab-content">
+    <div class="section-header">
+      <h2 data-i18n="h_sources">情報來源</h2>
+    </div>
+    <div class="sources-grid" id="sources-grid"></div>
+  </section>
+
+  <!-- AI Analysis Tab -->
+  <section id="tab-ai" class="tab-content">
+    <div class="ai-placeholder-init" data-i18n="lbl_loading">載入中...</div>
+  </section>
+
+</main>
+
+<!-- ── AI Settings Modal ──────────────────────────────────────────────────── -->
+<div class="modal-overlay" id="ai-settings-overlay" aria-hidden="true">
+  <div class="modal" role="dialog" aria-modal="true" style="max-width:480px">
+    <div class="modal-header">
+      <div style="font-size:13px;font-weight:600;color:var(--text)">⚙ AI API Key 設定</div>
+      <button class="modal-close" onclick="AI.closeSettings()">✕</button>
+    </div>
+    <div class="modal-body">
+
+      <!-- Gemini Plus notice -->
+      <div class="ai-plus-notice">
+        <span class="ai-plus-badge">✦ Gemini Plus / Advanced</span>
+        <span>如有 Google One AI Premium，API 配額大幅提升，並可使用 Pro 模型</span>
+      </div>
+
+      <div class="ai-key-group">
+        <label class="ai-key-label">
+          <span>⚡ Gemini API Key</span>
+          <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener" class="ai-key-link">從 AI Studio 取得 →</a>
+        </label>
+        <input type="password" id="ai-gemini-key" class="ai-key-input"
+               placeholder="AIza..." autocomplete="off" />
+        <div class="ai-key-hint">aistudio.google.com → 登入你的 Google 帳號 → 建立 API 金鑰</div>
+      </div>
+
+      <!-- Gemini Model Selector -->
+      <div class="ai-key-group">
+        <label class="ai-key-label"><span>Gemini 模型選擇</span></label>
+        <select id="ai-gemini-model" class="ai-key-input" style="font-family:var(--mono);cursor:pointer">
+          <option value="gemini-2.5-pro" selected>gemini-2.5-pro（最強 · Plus 推薦）</option>
+          <option value="gemini-2.5-flash">gemini-2.5-flash（快速 · Plus）</option>
+          <option value="gemini-2.0-flash">gemini-2.0-flash（快速 · 免費帳號）</option>
+          <option value="gemini-1.5-pro">gemini-1.5-pro（高品質）</option>
+          <option value="gemini-1.5-flash">gemini-1.5-flash（均衡）</option>
+        </select>
+        <div class="ai-key-hint" data-i18n="ai_gemini_hint">Plus 帳號建議選 gemini-2.5-pro 獲得最佳分析品質</div>
+      </div>
+
+      <div class="ai-divider">── 或使用 Groq 作為備援 ──</div>
+
+      <div class="ai-key-group">
+        <label class="ai-key-label">
+          <span>🦙 Groq API Key（備援）</span>
+          <a href="https://console.groq.com/keys" target="_blank" rel="noopener" class="ai-key-link">免費取得 →</a>
+        </label>
+        <input type="password" id="ai-groq-key" class="ai-key-input"
+               placeholder="gsk_..." autocomplete="off" />
+        <div class="ai-key-hint">Groq Cloud · 免費 · 30次/分 · llama-3.3-70b</div>
+      </div>
+
+      <p style="font-size:11px;color:var(--text3);margin-top:12px;line-height:1.6">
+        🔒 API Key 僅儲存於本機瀏覽器，不經過任何伺服器
+      </p>
+
+      <div style="display:flex;gap:8px;margin-top:16px">
+        <button class="btn-analyze" style="flex:1" onclick="AI.saveSettings()">儲存設定</button>
+        <button class="ai-clear-btn" onclick="AI.clearSettings()">清除</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Event Detail Modal ─────────────────────────────────────────────────── -->
+<div class="modal-overlay" id="modal-overlay" aria-hidden="true">
+  <div class="modal" role="dialog" aria-modal="true">
+    <div class="modal-header">
+      <div class="modal-severity" id="modal-severity"></div>
+      <button class="modal-close" id="modal-close" aria-label="關閉">✕</button>
+    </div>
+    <div class="modal-body">
+      <h3 class="modal-title" id="modal-title"></h3>
+      <div class="modal-meta" id="modal-meta"></div>
+      <div class="modal-description" id="modal-description"></div>
+      <div class="modal-actions">
+        <a class="modal-link" id="modal-link" target="_blank" rel="noopener"
+           data-i18n="modal_link">前往原始來源 →</a>
+      </div>
+      <div class="modal-related" id="modal-related"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Loading Overlay ────────────────────────────────────────────────────── -->
+<div class="loading-overlay" id="loading-overlay">
+  <div class="loading-box">
+    <div class="loading-spinner"></div>
+    <div class="loading-text" data-i18n="loading_main">正在掃描情報來源...</div>
+    <div class="loading-sub" id="loading-sub" data-i18n="loading_sub">連接資料庫</div>
+  </div>
+</div>
+
+<!-- ── Toast Notification ─────────────────────────────────────────────────── -->
+<div class="toast" id="toast"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="js/i18n.js"></script>
+<script src="js/sources.js"></script>
+<script src="js/taiwan.js"></script>
+<script src="js/ai.js"></script>
+<script src="js/app.js"></script>
+<script>
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("/sw.js")
+        .then(r => console.log("[SW] registered:", r.scope))
+        .catch(e => console.warn("[SW] registration failed:", e));
+    });
+  }
+</script>
+</body>
+</html>

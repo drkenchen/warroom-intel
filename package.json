@@ -1,0 +1,14 @@
+{
+  "name": "warroom-intelligence",
+  "version": "1.0.0",
+  "description": "全球危機情報儀表板 — Firebase Hosting",
+  "scripts": {
+    "serve": "firebase serve --only hosting",
+    "deploy": "firebase deploy --only hosting",
+    "deploy:all": "firebase deploy",
+    "functions:install": "cd functions && npm install"
+  },
+  "devDependencies": {
+    "firebase-tools": "^13.0.0"
+  }
+}
