@@ -146,7 +146,7 @@ const SEVERITY_KEYWORDS = {
   critical: [
     "war","warfare","invasion","invaded","nuclear launch","missile strike","bombed",
     "airstrike","air strike","chemical weapon","biological weapon","ground offensive",
-    "carpet bombing","genocide","coup","全面","战争","入侵","核武","导弹攻击","轰炸",
+    "carpet bombing","genocide","coup","战争","入侵","核武","导弹攻击","轰炸",
     "空袭","侵台","攻台","武统","全面进攻","核打击","政变","屠杀"
   ],
   high: [

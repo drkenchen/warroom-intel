@@ -121,6 +121,18 @@
   <!-- Taiwan Strait Tab -->
   <section id="tab-taiwan" class="tab-content">
 
+    <!-- Playback Bar -->
+    <div class="playback-bar" id="tw-playback-bar">
+      <span class="live-badge" id="live-badge">● LIVE</span>
+      <span class="playback-sep">|</span>
+      <span class="playback-label" data-i18n="tw_playback_label">歷史快照</span>
+      <select class="playback-select" id="playback-select">
+        <option value="" data-i18n="tw_playback_select">選擇日期...</option>
+      </select>
+      <button class="playback-clear" id="playback-clear" style="display:none" data-i18n="tw_playback_live">返回即時</button>
+    </div>
+    <div class="playback-badge" id="playback-badge" style="display:none"></div>
+
     <!-- Row 1: Tension Gauge -->
     <div class="tw-top-row">
       <div class="taiwan-status-box">
@@ -129,6 +141,7 @@
           <div class="gauge-fill" id="gauge-fill" style="width:0%"></div>
         </div>
         <div class="gauge-value" id="gauge-value" data-i18n="calculating">計算中...</div>
+        <div id="anomaly-banner"></div>
       </div>
       <div class="tw-ai-box">
         <div class="taiwan-label" data-i18n="tw_ai_label">✦ AI 深度分析</div>
@@ -142,6 +155,31 @@
     <!-- MND Daily PLA Report -->
     <div class="tw-section-title" data-i18n="tw_mnd">▌ 國防部每日共軍動態</div>
     <div id="taiwan-mnd-summary"></div>
+
+    <!-- MND Trend Chart -->
+    <div class="tw-section-title" data-i18n="tw_mnd_trend">▌ 解放軍動態趨勢（近30日）</div>
+    <div class="chart-container" id="mnd-chart-container">
+      <canvas id="mnd-trend-chart"></canvas>
+      <div class="chart-no-data" id="mnd-chart-no-data" data-i18n="tw_chart_no_data"></div>
+    </div>
+
+    <!-- Tension Index History Chart -->
+    <div class="tw-section-title" data-i18n="tw_history">▌ 台海緊張指數趨勢（近30日）</div>
+    <div class="chart-container" id="tension-chart-container">
+      <canvas id="tension-trend-chart"></canvas>
+      <div class="chart-no-data" id="tension-chart-no-data" data-i18n="tw_chart_no_data"></div>
+    </div>
+
+    <!-- GDELT Media Signal Chart -->
+    <div class="tw-section-title" data-i18n="tw_gdelt">▌ GDELT 全球媒體聲量訊號（近30日）</div>
+    <div class="chart-container" id="gdelt-chart-container">
+      <canvas id="gdelt-trend-chart"></canvas>
+      <div class="chart-no-data visible" id="gdelt-chart-no-data" data-i18n="tw_chart_loading">載入中...</div>
+    </div>
+
+    <!-- Early Warning Radar -->
+    <div class="tw-section-title" data-i18n="tw_early_warning_title">▌ 多維預警雷達</div>
+    <div id="tw-early-warning"></div>
 
     <!-- Row 2: Threat Dimensions -->
     <div class="tw-section-title" data-i18n="tw_threat">▌ 威脅面向分析</div>

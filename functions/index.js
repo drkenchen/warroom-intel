@@ -26,6 +26,13 @@ const RSS_SOURCES = [
     url: "https://rsshub.app/apnews/topics/apf-intlnews" },
   { id: "guardian", name: "The Guardian World", lang: "en", region: "INTL",
     url: "https://www.theguardian.com/world/rss" },
+  // Chinese state/military media — early warning signal sources
+  { id: "globaltimes", name: "Global Times", lang: "en", region: "CN",
+    url: "https://www.globaltimes.cn/rss/outbrain.xml" },
+  { id: "xinhua_en", name: "Xinhua English", lang: "en", region: "CN",
+    url: "https://feeds.feedburner.com/xinhuanet/EEXX" },
+  { id: "scmp", name: "SCMP Asia", lang: "en", region: "INTL",
+    url: "https://www.scmp.com/rss/91/feed" },
 ];
 
 // ─── Severity Scoring ───────────────────────────────────────────────────────
@@ -130,6 +137,7 @@ async function fetchRSS(source) {
       const pubDate = item.pubDate || item["dc:date"] || item.updated || new Date().toISOString();
 
       const combined = `${title} ${desc}`;
+      const rhetoricLevel = detectRhetoricLevel(combined);
       return {
         id: Buffer.from(link).toString("base64").slice(0, 20),
         title: title.replace(/<[^>]+>/g, "").trim(),
@@ -143,6 +151,8 @@ async function fetchRSS(source) {
         region: detectRegion(combined),
         publishedAt: new Date(pubDate).toISOString(),
         fetchedAt: new Date().toISOString(),
+        isExercise: detectExercise(combined),
+        rhetoricLevel,
       };
     }).filter(e => e.title);
   } catch (err) {
@@ -197,9 +207,27 @@ function mndHeaders(referer, lang = "zh") {
 }
 
 function extractMainContent(html) {
-  const m = html.match(/<div[^>]+class="[^"]*maincontent[^"]*"[^>]*>([\s\S]*?)<\/div>\s*<div/);
-  if (!m) return null;
-  return m[1]
+  // Find the start of maincontent div
+  const startM = html.match(/<div[^>]+class="[^"]*maincontent[^"]*"[^>]*>/);
+  if (!startM) return null;
+  const start = startM.index + startM[0].length;
+  // Walk the HTML to find the matching closing tag (track nesting depth)
+  let depth = 1;
+  let i = start;
+  while (i < html.length && depth > 0) {
+    const openTag  = html.indexOf("<div", i);
+    const closeTag = html.indexOf("</div", i);
+    if (closeTag === -1) break;
+    if (openTag !== -1 && openTag < closeTag) {
+      depth++;
+      i = openTag + 4;
+    } else {
+      depth--;
+      i = closeTag + 5;
+    }
+  }
+  const raw = html.slice(start, i);
+  return raw
     .replace(/<[^>]+>/g, " ")
     .replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&rsquo;/g, "'")
     .replace(/&#\d+;/g, "").replace(/\s+/g, " ").trim();
@@ -216,12 +244,30 @@ async function fetchMNDReport() {
 
     const [zhHtml, enHtml] = await Promise.all([zhList.text(), enList.ok ? enList.text() : Promise.resolve("")]);
 
-    const zhLink = zhHtml.match(/href="(news\/plaact\/\d+)"/);
-    const enLink = enHtml.match(/href="(news\/plaact\/\d+)"/);
-    if (!zhLink) throw new Error("No ZH plaact link found");
+    // Find all article links with their list-page dates (format: 115.03.29)
+    // The date div immediately follows each article link in the HTML
+    const zhEntries = [...zhHtml.matchAll(/href="(news\/plaact\/(\d+))"[\s\S]*?<div[^>]*date[^>]*>(\d+\.\d+\.\d+)<\/div>/g)];
+    if (!zhEntries.length) throw new Error("No ZH plaact link found");
+    // Pick the entry with the highest article ID
+    const zhBest = zhEntries.reduce((best, m) => parseInt(m[2]) > parseInt(best[2]) ? m : best, zhEntries[0]);
 
-    const zhUrl = `${MND_BASE}/${zhLink[1]}`;
-    const enUrl = enLink ? `${MND_BASE}/en/${enLink[1]}` : null;
+    const enEntries = [...enHtml.matchAll(/href="(news\/plaact\/(\d+))"[\s\S]*?<div[^>]*date[^>]*>(\d+\.\d+\.\d+)<\/div>/g)];
+    const enBest = enEntries.length
+      ? enEntries.reduce((best, m) => parseInt(m[2]) > parseInt(best[2]) ? m : best, enEntries[0])
+      : null;
+
+    const zhUrl = `${MND_BASE}/${zhBest[1]}`;
+    const enUrl = enBest ? `${MND_BASE}/en/${enBest[1]}` : null;
+
+    // Publication date from list page (ROC year format: 115.03.29 → 2026-03-29)
+    let listReportDate = null;
+    if (zhBest[3]) {
+      const parts = zhBest[3].split(".");
+      if (parts.length === 3) {
+        const wy = parseInt(parts[0]) + 1911;
+        listReportDate = `${wy}-${parts[1].padStart(2,"0")}-${parts[2].padStart(2,"0")}`;
+      }
+    }
 
     // Fetch ZH and EN articles in parallel
     const [zhArticle, enArticle] = await Promise.all([
@@ -245,12 +291,16 @@ async function fetchMNDReport() {
                           zhText.match(/共[軍機][^，。]{0,5}?(\d+)\s*架次/);
     const shipsMatch    = zhText.match(/共艦\s*(\d+)\s*艘/) || zhText.match(/艦[船]*\s*(\d+)\s*艘/);
     const adizMatch     = zhText.match(/進入[^，。]*?空域\s*(\d+)\s*架次/);
-    const medianLineCrossing = /逾越海峽中線|跨越.*?中線|中線以東/.test(zhText);
+    // Match "8架次逾越中線" or "逾越中線...13架次" or boolean variants
+    const medianMatch   = zhText.match(/(\d+)\s*架次逾越中線/) ||
+                          zhText.match(/逾越中線[^，。]*?(\d+)\s*架次/);
+    const medianLineCrossings = medianMatch ? parseInt(medianMatch[1]) : null;
+    const medianLineCrossing  = !!medianMatch || /逾越海峽中線|跨越.*?中線|中線以東/.test(zhText);
 
-    // Report date from ROC calendar
+    // Report date: prefer list-page publication date, fall back to ROC date in article body
     const rocMatch = zhText.match(/中華民國\s*(\d+)\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日/);
-    let reportDate = new Date().toISOString().slice(0, 10);
-    if (rocMatch) {
+    let reportDate = listReportDate || new Date().toISOString().slice(0, 10);
+    if (!listReportDate && rocMatch) {
       const year = parseInt(rocMatch[1]) + 1911;
       reportDate = `${year}-${String(rocMatch[2]).padStart(2,"0")}-${String(rocMatch[3]).padStart(2,"0")}`;
     }
@@ -276,8 +326,9 @@ async function fetchMNDReport() {
       aircraft:           aircraftMatch ? parseInt(aircraftMatch[1]) : null,
       ships:              shipsMatch    ? parseInt(shipsMatch[1])    : null,
       adizCount:          adizMatch     ? parseInt(adizMatch[1])     : null,
-      adizViolation:      !!adizMatch,
+      adizViolation:        !!adizMatch,
       medianLineCrossing,
+      medianLineCrossings,
       types,
       summary:   zhSummary,
       summaryEn: enSummary,
@@ -290,6 +341,49 @@ async function fetchMNDReport() {
     console.error("MND fetch failed:", err.message);
     return null;
   }
+}
+
+// ─── PLA Exercise & Rhetoric Detection ──────────────────────────────────────
+const EXERCISE_KW = [
+  "joint sword","联合利剑","聯合利劍",
+  "pla exercise","military drill","live-fire drill","amphibious exercise",
+  "combat readiness patrol","戰備巡邏","실탄훈련",
+  "eastern theater command","eastern theatre","東部戰區演習",
+  "encirclement exercise","blockade drill","封鎖演習",
+  "rocket force","火箭軍演習","ballistic missile test",
+  "joint combat readiness","聯合戰備",
+  "snap drill","no-notice exercise","突擊演習",
+  "carrier strike group","航母戰鬥群演習",
+];
+
+// Escalatory CCP/PLA rhetoric — three tiers
+const RHETORIC_L3 = [ // Critical: ultimatum / red line / imminent
+  "武力統一","武統","cross the red line","跨越紅線",
+  "invasion imminent","ultimatum","final warning","最後警告",
+  "reunification by force","強制統一",
+];
+const RHETORIC_L2 = [ // High: deadline / timeline / stern warning
+  "reunification timeline","統一時間表","統一期限",
+  "stern warning","严正警告","嚴正警告",
+  "taiwan independence means war","台獨就是戰爭",
+  "one china principle","底線","不惜一切",
+];
+const RHETORIC_L1 = [ // Elevated: general tension language
+  "taiwan strait tension","cross-strait escalat",
+  "反分裂","separatist","provocation","挑釁升溫",
+  "military option","軍事選項",
+];
+
+function detectExercise(text) {
+  const t = text.toLowerCase();
+  return EXERCISE_KW.some(k => t.includes(k.toLowerCase()));
+}
+function detectRhetoricLevel(text) {
+  const t = text.toLowerCase();
+  if (RHETORIC_L3.some(k => t.includes(k.toLowerCase()))) return 3;
+  if (RHETORIC_L2.some(k => t.includes(k.toLowerCase()))) return 2;
+  if (RHETORIC_L1.some(k => t.includes(k.toLowerCase()))) return 1;
+  return 0;
 }
 
 // ─── Main Sweep Function ─────────────────────────────────────────────────────
@@ -336,6 +430,67 @@ async function runSweep() {
     batch.set(db.collection("mnd").doc("latest"), mnd);
   }
   await batch.commit();
+
+  // Write historical daily summary records
+  try {
+    const todayKey = new Date().toISOString().slice(0, 10);
+    const twEvents = allEvents.filter(e => e.isTaiwan);
+    const critCount = twEvents.filter(e => e.severity === "critical").length;
+    const highCount = twEvents.filter(e => e.severity === "high").length;
+    const medCount  = twEvents.filter(e => e.severity === "medium").length;
+    const eventScore = Math.min(25,
+      critCount * 6 +
+      Math.sqrt(highCount) * 4 +
+      Math.sqrt(medCount) * 1.5
+    );
+    let tensionIdx = 38 + eventScore;
+    if (mnd) {
+      const ac = mnd.aircraft;
+      if (ac != null) tensionIdx += ac >= 30 ? 15 : ac >= 20 ? 10 : ac >= 10 ? 4 : ac >= 1 ? 1 : 0;
+      if (mnd.medianLineCrossing) tensionIdx += 12;
+      if (mnd.adizViolation)      tensionIdx += 3;
+      const ships = mnd.ships || 0;
+      if (ships >= 10) tensionIdx += 6;
+      else if (ships >= 5) tensionIdx += 2;
+    }
+    tensionIdx = Math.round(Math.min(95, tensionIdx));
+
+    const exerciseEvents = allEvents.filter(e => e.isExercise);
+    const maxRhetoric    = allEvents.reduce((mx, e) => Math.max(mx, e.rhetoricLevel || 0), 0);
+    const stateMediCount = allEvents.filter(e => ["globaltimes","xinhua_en"].includes(e.sourceId) && e.isTaiwan).length;
+
+    const histBatch = db.batch();
+    histBatch.set(db.collection("sweeps_history").doc(todayKey), {
+      date:              todayKey,
+      tensionIndex:      tensionIdx,
+      criticalCount:     allEvents.filter(e => e.severity === "critical").length,
+      highCount:         allEvents.filter(e => e.severity === "high").length,
+      mediumCount:       allEvents.filter(e => e.severity === "medium").length,
+      topEvents:         allEvents.slice(0, 5).map(e => ({ title: e.title, source: e.source, severity: e.severity })),
+      exerciseCount:     exerciseEvents.length,
+      exerciseTitles:    exerciseEvents.slice(0, 3).map(e => e.title),
+      maxRhetoricLevel:  maxRhetoric,
+      stateMediaTaiwan:  stateMediCount,
+      updatedAt:         new Date().toISOString(),
+    }, { merge: true });
+
+    if (mnd) {
+      const mndKey = mnd.reportDate || todayKey;
+      histBatch.set(db.collection("mnd_history").doc(mndKey), {
+        date:               mndKey,
+        aircraft:           mnd.aircraft,
+        ships:              mnd.ships,
+        adizViolation:      mnd.adizViolation,
+        adizCount:          mnd.adizCount,
+        medianLineCrossing: mnd.medianLineCrossing,
+        updatedAt:          new Date().toISOString(),
+      }, { merge: true });
+    }
+    await histBatch.commit();
+  } catch (histErr) {
+    console.error("History write failed:", histErr.message);
+  }
+
   console.log(`Sweep complete: ${allEvents.length} events, MND: ${mnd ? `${mnd.aircraft}架/${mnd.ships}艘` : "unavailable"}`);
   return allEvents;
 }
@@ -380,15 +535,173 @@ exports.api = functions
 
     if (path === "/api/mnd" || path === "/mnd") {
       try {
+        const forceRefresh = req.query.refresh === "1";
         const doc = await db.collection("mnd").doc("latest").get();
-        if (doc.exists) return res.json(doc.data());
-        // Try fresh fetch if no cached data
+        if (doc.exists && !forceRefresh) {
+          const cached = doc.data();
+          const ageMs = Date.now() - new Date(cached.fetchedAt || 0).getTime();
+          // Return cache if < 25 hours old (MND publishes once per day)
+          if (ageMs < 25 * 60 * 60 * 1000) return res.json({ ...cached, cached: true });
+        }
+        // Cache is stale or missing — fetch fresh data
         const data = await fetchMNDReport();
         if (data) {
           await db.collection("mnd").doc("latest").set(data);
+          // Also write to mnd_history
+          await db.collection("mnd_history").doc(data.reportDate).set({
+            date:               data.reportDate,
+            aircraft:           data.aircraft,
+            ships:              data.ships,
+            adizViolation:      data.adizViolation,
+            adizCount:          data.adizCount,
+            medianLineCrossing: data.medianLineCrossing,
+            updatedAt:          new Date().toISOString(),
+          }, { merge: true });
           return res.json(data);
         }
+        // Fresh fetch failed — return stale cache if available, with warning
+        if (doc.exists) return res.json({ ...doc.data(), stale: true });
         return res.status(404).json({ error: "MND data unavailable" });
+      } catch (err) {
+        return res.status(500).json({ error: err.message });
+      }
+    }
+
+    if (path === "/api/history" || path === "/history") {
+      try {
+        const days = Math.min(60, parseInt(req.query.days || "30"));
+        const snap = await db.collection("sweeps_history")
+          .orderBy("date", "desc")
+          .limit(days)
+          .get();
+        const history = snap.docs.map(d => d.data()).reverse();
+        return res.json({ history });
+      } catch (err) {
+        return res.status(500).json({ error: err.message });
+      }
+    }
+
+    if (path === "/api/mnd-history" || path === "/mnd-history") {
+      try {
+        const days = Math.min(60, parseInt(req.query.days || "30"));
+        const snap = await db.collection("mnd_history")
+          .orderBy("date", "desc")
+          .limit(days)
+          .get();
+        const history = snap.docs.map(d => d.data()).reverse();
+        return res.json({ history });
+      } catch (err) {
+        return res.status(500).json({ error: err.message });
+      }
+    }
+
+    if (path === "/api/early-warning" || path === "/early-warning") {
+      try {
+        const [sweepSnap, mndSnap, latestSnap] = await Promise.all([
+          db.collection("sweeps_history").orderBy("date","desc").limit(30).get(),
+          db.collection("mnd_history").orderBy("date","desc").limit(30).get(),
+          db.collection("sweeps").doc("latest").get(),
+        ]);
+
+        const sweepHist = sweepSnap.docs.map(d => d.data()).reverse();
+        const mndHist   = mndSnap.docs.map(d => d.data()).reverse();
+        const latestEvt = latestSnap.exists ? (latestSnap.data().events || []) : [];
+
+        // ── Helper: rolling average of last N items ───────────────────────
+        const avg = (arr, key, n) => {
+          const vals = arr.slice(-n).map(d => d[key] ?? null).filter(v => v !== null);
+          return vals.length ? vals.reduce((s,v) => s+v, 0) / vals.length : null;
+        };
+
+        // ── Indicator 1: Aircraft sortie surge ───────────────────────────
+        const latestMND  = mndHist[mndHist.length - 1] || {};
+        const avg7Sorties = avg(mndHist.slice(0, -1), "aircraft", 7);
+        const todaySorties = latestMND.aircraft ?? null;
+        let sortie_level = 0;
+        let sortie_pct   = null;
+        if (todaySorties !== null && avg7Sorties) {
+          sortie_pct = ((todaySorties - avg7Sorties) / avg7Sorties) * 100;
+          sortie_level = sortie_pct >= 100 ? 3 : sortie_pct >= 50 ? 2 : sortie_pct >= 20 ? 1 : 0;
+        }
+
+        // ── Indicator 2: Consecutive median line crossing days ────────────
+        let median_streak = 0;
+        for (let i = mndHist.length - 1; i >= 0; i--) {
+          if (mndHist[i].medianLineCrossing) median_streak++;
+          else break;
+        }
+        const median_level = median_streak >= 6 ? 3 : median_streak >= 3 ? 2 : median_streak >= 1 ? 1 : 0;
+
+        // ── Indicator 3: ADIZ intrusion intensity ─────────────────────────
+        const avg7ADIZ    = avg(mndHist.slice(0,-1), "adizCount", 7);
+        const todayADIZ   = latestMND.adizCount ?? null;
+        let adiz_level = 0, adiz_pct = null;
+        if (todayADIZ !== null && avg7ADIZ) {
+          adiz_pct  = ((todayADIZ - avg7ADIZ) / avg7ADIZ) * 100;
+          adiz_level = adiz_pct >= 100 ? 3 : adiz_pct >= 50 ? 2 : adiz_pct >= 20 ? 1 : 0;
+        }
+
+        // ── Indicator 4: Tension index 7-day trend ────────────────────────
+        const recent7 = sweepHist.slice(-7).map(d => d.tensionIndex || 0);
+        let tension_slope = 0;
+        if (recent7.length >= 2) {
+          tension_slope = recent7[recent7.length-1] - recent7[0];
+        }
+        const tension_level = tension_slope >= 12 ? 3 : tension_slope >= 6 ? 2 : tension_slope >= 2 ? 1 : 0;
+
+        // ── Indicator 5: PLA exercise detection (7-day window) ────────────
+        const ex7d = sweepHist.slice(-7).reduce((s,d) => s + (d.exerciseCount||0), 0);
+        const exTitles = sweepHist.slice(-7).flatMap(d => d.exerciseTitles||[]).slice(0,3);
+        // Also check latest events
+        const liveExCount = latestEvt.filter(e => e.isExercise).length;
+        const totalEx = ex7d + liveExCount;
+        const exercise_level = totalEx >= 5 ? 3 : totalEx >= 2 ? 2 : totalEx >= 1 ? 1 : 0;
+
+        // ── Indicator 6: CCP/PLA escalatory rhetoric ─────────────────────
+        const maxRhet7d = sweepHist.slice(-7).reduce((mx,d) => Math.max(mx, d.maxRhetoricLevel||0), 0);
+        const liveRhet  = latestEvt.reduce((mx,e) => Math.max(mx, e.rhetoricLevel||0), 0);
+        const rhetoric_level = Math.max(maxRhet7d, liveRhet);
+
+        // ── Indicator 7: Chinese state media Taiwan coverage heat ─────────
+        const stateMedia7d = sweepHist.slice(-7).reduce((s,d) => s + (d.stateMediaTaiwan||0), 0);
+        const liveState    = latestEvt.filter(e => ["globaltimes","xinhua_en"].includes(e.sourceId) && e.isTaiwan).length;
+        const stateTotal   = stateMedia7d + liveState;
+        const state_level  = stateTotal >= 10 ? 3 : stateTotal >= 5 ? 2 : stateTotal >= 2 ? 1 : 0;
+
+        // ── Indicator 8: Taiwan event cluster (last 24h) ──────────────────
+        const cutoff24h   = Date.now() - 24*60*60*1000;
+        const cluster24h  = latestEvt.filter(e =>
+          e.isTaiwan &&
+          (e.severity === "critical" || e.severity === "high") &&
+          new Date(e.publishedAt).getTime() > cutoff24h
+        ).length;
+        const cluster_level = cluster24h >= 7 ? 3 : cluster24h >= 4 ? 2 : cluster24h >= 2 ? 1 : 0;
+
+        // ── Composite score ───────────────────────────────────────────────
+        const levels = [sortie_level, median_level, adiz_level, tension_level,
+                        exercise_level, rhetoric_level, state_level, cluster_level];
+        const score  = levels.reduce((s,v) => s+v, 0);
+        const maxScore = levels.length * 3;
+        const composite_level =
+          score >= Math.round(maxScore * 0.75) ? 4 :
+          score >= Math.round(maxScore * 0.55) ? 3 :
+          score >= Math.round(maxScore * 0.35) ? 2 :
+          score >= Math.round(maxScore * 0.15) ? 1 : 0;
+
+        return res.json({
+          indicators: {
+            sortie_surge:   { level: sortie_level,   value: todaySorties, avg7d: avg7Sorties ? +avg7Sorties.toFixed(1) : null, pctChange: sortie_pct ? +sortie_pct.toFixed(0) : null },
+            median_streak:  { level: median_level,   streak: median_streak },
+            adiz_intensity: { level: adiz_level,     value: todayADIZ, avg7d: avg7ADIZ ? +avg7ADIZ.toFixed(1) : null, pctChange: adiz_pct ? +adiz_pct.toFixed(0) : null },
+            tension_trend:  { level: tension_level,  slope: +tension_slope.toFixed(1), recent7 },
+            exercise_detect:{ level: exercise_level, count7d: totalEx, titles: exTitles },
+            pla_rhetoric:   { level: rhetoric_level },
+            state_media:    { level: state_level,    count7d: stateTotal },
+            event_cluster:  { level: cluster_level,  count24h: cluster24h },
+          },
+          composite: { score, maxScore, level: composite_level },
+          updatedAt: new Date().toISOString(),
+        });
       } catch (err) {
         return res.status(500).json({ error: err.message });
       }

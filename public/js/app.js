@@ -177,14 +177,36 @@ function updateMapMarkers() {
     const countText = count > 0
       ? `<div class="lf-popup-count">◎ ${count} ${isEn ? "live events" : "條即時情報"}</div>`
       : `<div class="lf-popup-count" style="color:#666">${isEn ? "No live events" : "暫無即時情報"}</div>`;
+    const isEn2 = typeof LANG_STATE !== "undefined" && LANG_STATE.current === "en";
     dot.bindPopup(
       `<div class="lf-popup">` +
       `<div class="lf-popup-title">${h.emoji} <strong>${regionDisplay}</strong></div>` +
       `<div class="lf-popup-risk" style="color:${color}">▮ ${label}</div>` +
       countText +
+      `<div class="lf-popup-filter" style="font-size:10px;color:#4a8fff;margin-top:6px;cursor:pointer">${isEn2 ? "▶ Filter events for this region" : "▶ 篩選此地區事件"}</div>` +
       `</div>`,
       { maxWidth: 200, className: "lf-popup-wrap" }
     );
+
+    dot.on("click", () => {
+      // After popup opens, switch to global tab and filter by this region
+      setTimeout(() => {
+        State.activeRegion = h.region;
+        const sel = document.getElementById("region-filter");
+        if (sel) sel.value = h.region;
+        // Switch to global tab
+        document.querySelectorAll(".nav-btn").forEach(b => b.classList.remove("active"));
+        document.querySelectorAll(".tab-content").forEach(tc => tc.classList.remove("active"));
+        const globalBtn = document.querySelector(".nav-btn[data-tab='global']");
+        const globalTab = document.getElementById("tab-global");
+        if (globalBtn) globalBtn.classList.add("active");
+        if (globalTab) globalTab.classList.add("active");
+        State.currentTab = "global";
+        applyFilters();
+        renderGlobalEvents();
+        if (_mapVisible) setTimeout(() => _map?.invalidateSize(), 80);
+      }, 200);
+    });
 
     _mapMarkers.push(dot);
     totalPinned++;
@@ -198,17 +220,27 @@ function updateMapMarkers() {
 const API_BASE = "https://us-central1-warroom-intel.cloudfunctions.net/api";
 
 const State = {
-  events:       [],
-  filtered:     [],
-  currentTab:   "global",
-  activeFilter: "all",
-  activeRegion: "all",
-  activeLang:   "all",
-  isLoading:    false,
-  lastUpdated:  null,
-  sourceStatus: {},
-  mnd:          null,
+  events:        [],
+  filtered:      [],
+  currentTab:    "global",
+  activeFilter:  "all",
+  activeRegion:  "all",
+  activeLang:    "all",
+  isLoading:     false,
+  lastUpdated:   null,
+  sourceStatus:  {},
+  mnd:           null,
+  history:       [],
+  mndHistory:    [],
+  playbackDate:  null, // null = live mode
+  earlyWarning:  null,
 };
+
+// Tier-1 source IDs for badge display
+const TIER1_SOURCE_IDS = new Set([
+  "rand","isw","aspi","bellingcat","wotr","diplomat","lawfare",
+  "carnegie","brookings","csis_main","cfr","fa","fp","mwi","justsecurity",
+]);
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 const $ = id => document.getElementById(id);
@@ -462,6 +494,8 @@ function eventCardHTML(e) {
   const region   = typeof tRegion === "function" ? tRegion(ri.region || "全球") : (ri.region || "全球");
   const twTag    = typeof t === "function" ? t("taiwan_tag") : "台海";
 
+  const tier1 = TIER1_SOURCE_IDS.has(e.sourceId);
+
   return `
     <div class="event-card severity-${e.severity}" data-id="${e.id}" onclick="openModal('${e.id}')">
       <div class="event-top">
@@ -471,6 +505,7 @@ function eventCardHTML(e) {
       </div>
       <div class="event-meta">
         <span class="event-source-tag">${e.source}</span>
+        ${tier1 ? '<span class="tier1-badge">TIER 1</span>' : ""}
         <span class="event-region-tag">${emoji} ${region}</span>
         ${e.isTaiwan ? `<span class="taiwan-tag">${twTag}</span>` : ""}
         <span class="event-meta-item">${time}</span>
@@ -499,16 +534,107 @@ async function fetchMNDData() {
   }
 }
 
+async function fetchHistoryData() {
+  try {
+    const res = await fetch(`${API_BASE}/history?days=30`);
+    if (!res.ok) return;
+    const data = await res.json();
+    State.history = data.history || [];
+  } catch (e) {
+    console.warn("History fetch failed:", e.message);
+  }
+}
+
+async function fetchMNDHistoryData() {
+  try {
+    const res = await fetch(`${API_BASE}/mnd-history?days=30`);
+    if (!res.ok) return;
+    const data = await res.json();
+    State.mndHistory = data.history || [];
+  } catch (e) {
+    console.warn("MND history fetch failed:", e.message);
+  }
+}
+
+async function fetchEarlyWarning() {
+  try {
+    const res = await fetch(`${API_BASE}/early-warning`);
+    if (!res.ok) return;
+    State.earlyWarning = await res.json();
+  } catch (e) {
+    console.warn("Early warning fetch failed:", e.message);
+  }
+}
+
 function renderTaiwanTab() {
   const c = $("taiwan-events");
   if (!c) return;
-  const tw = State.events.filter(e => e.isTaiwan);
-  TaiwanAnalysis.render(State.events, State.mnd);
-  if (tw.length === 0) {
-    c.innerHTML = `<div class="empty-state"><div class="empty-state-icon">◌</div><p>${t("empty_tw")}</p></div>`;
-    return;
+
+  // Populate playback date selector from history
+  _populatePlaybackSelect();
+
+  const playbackData = _getPlaybackData();
+  TaiwanAnalysis.render(State.events, State.mnd, State.history, State.mndHistory, playbackData, State.earlyWarning);
+
+  // In live mode, render real events; in playback mode, events handled by taiwan.js
+  if (!playbackData) {
+    const tw = State.events.filter(e => e.isTaiwan);
+    if (tw.length === 0) {
+      c.innerHTML = `<div class="empty-state"><div class="empty-state-icon">◌</div><p>${t("empty_tw")}</p></div>`;
+    } else {
+      c.innerHTML = tw.map(eventCardHTML).join("");
+    }
   }
-  c.innerHTML = tw.map(eventCardHTML).join("");
+}
+
+function _getPlaybackData() {
+  if (!State.playbackDate) return null;
+  const sweepSnap = State.history.find(d => d.date === State.playbackDate) || null;
+  const mndSnap   = State.mndHistory.find(d => d.date === State.playbackDate) || null;
+  if (!sweepSnap && !mndSnap) return null;
+  return {
+    date:        State.playbackDate,
+    tensionIndex: sweepSnap?.tensionIndex,
+    topEvents:    sweepSnap?.topEvents || [],
+    // MND fields for _renderMNDSummary playback
+    aircraft:           mndSnap?.aircraft,
+    ships:              mndSnap?.ships,
+    adizViolation:      mndSnap?.adizViolation,
+    adizCount:          mndSnap?.adizCount,
+    medianLineCrossing: mndSnap?.medianLineCrossing,
+  };
+}
+
+function _populatePlaybackSelect() {
+  const sel   = $("playback-select");
+  const badge = $("playback-badge");
+  const clear = $("playback-clear");
+  const live  = $("live-badge");
+  if (!sel) return;
+
+  // Build date options from history
+  const dates = State.history.map(d => d.date).filter(Boolean).sort().reverse();
+  const cur = sel.value;
+  while (sel.options.length > 1) sel.remove(1);
+  dates.forEach(d => sel.appendChild(new Option(d, d)));
+
+  // Restore selection or live mode
+  if (State.playbackDate && dates.includes(State.playbackDate)) {
+    sel.value = State.playbackDate;
+    if (badge) { badge.style.display = "block"; badge.textContent = t("tw_playback_badge", State.playbackDate); }
+    if (clear) clear.style.display = "inline-block";
+    if (live)  live.style.display  = "none";
+  } else {
+    sel.value = "";
+    if (badge) badge.style.display = "none";
+    if (clear) clear.style.display = "none";
+    if (live)  live.style.display  = "inline";
+  }
+}
+
+function setPlaybackDate(date) {
+  State.playbackDate = date || null;
+  renderTaiwanTab();
 }
 
 function renderHotspots() {
@@ -746,6 +872,14 @@ function bindEvents() {
     renderGlobalEvents();
   });
 
+  // Playback date selector
+  $("playback-select")?.addEventListener("change", e => {
+    setPlaybackDate(e.target.value || null);
+  });
+  $("playback-clear")?.addEventListener("click", () => {
+    setPlaybackDate(null);
+  });
+
   // Refresh button
   $("refresh-btn")?.addEventListener("click", async () => {
     const btn = $("refresh-btn");
@@ -769,8 +903,8 @@ async function init() {
   bindEvents();
   try { AI.init(); }   catch(e) { console.error("AI.init:", e); }
   try { initMap(); }   catch(e) { console.error("initMap:", e); }
-  await Promise.all([loadData(false), fetchMNDData()]);
-  // Re-render Taiwan tab now that MND data is available
+  await Promise.all([loadData(false), fetchMNDData(), fetchHistoryData(), fetchMNDHistoryData(), fetchEarlyWarning()]);
+  // Re-render Taiwan tab now that all data is available
   renderTaiwanTab();
   // Auto-refresh every 10 minutes
   setInterval(() => loadData(false), CACHE_TTL);
