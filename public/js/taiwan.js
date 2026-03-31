@@ -510,6 +510,7 @@ ${ctxLines || "（無額外戰略背景事件）"}
 
     const dpr  = window.devicePixelRatio || 1;
     const W    = canvas.parentElement.clientWidth - 28;
+    if (W <= 0) return; // tab hidden — will redraw when tab becomes visible
     const H    = 100;
     canvas.width  = W * dpr;
     canvas.height = H * dpr;
@@ -596,6 +597,7 @@ ${ctxLines || "（無額外戰略背景事件）"}
 
     const dpr  = window.devicePixelRatio || 1;
     const W    = canvas.parentElement.clientWidth - 28;
+    if (W <= 0) return; // tab hidden — will redraw when tab becomes visible
     const H    = 100;
     canvas.width  = W * dpr;
     canvas.height = H * dpr;

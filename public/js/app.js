@@ -844,6 +844,9 @@ function bindEvents() {
       document.getElementById("tab-" + btn.dataset.tab)?.classList.add("active");
       if (btn.dataset.tab === "global" && _mapVisible)
         setTimeout(() => _map?.invalidateSize(), 80);
+      // Redraw canvas charts after tab becomes visible (clientWidth was 0 while hidden)
+      if (btn.dataset.tab === "taiwan")
+        setTimeout(() => renderTaiwanTab(), 50);
     });
   });
 
