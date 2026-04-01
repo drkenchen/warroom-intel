@@ -1,5 +1,5 @@
 // ── Warroom PWA Service Worker ─────────────────────────────────────────────
-const CACHE   = "warroom-sw-v8";
+const CACHE   = "warroom-sw-v9";
 const SHELL   = [
   "/css/style.css",
   "/js/i18n.js",

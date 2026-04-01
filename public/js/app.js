@@ -846,7 +846,7 @@ function bindEvents() {
         setTimeout(() => _map?.invalidateSize(), 80);
       // Redraw canvas charts after tab becomes visible (clientWidth was 0 while hidden)
       if (btn.dataset.tab === "taiwan")
-        setTimeout(() => renderTaiwanTab(), 50);
+        requestAnimationFrame(() => requestAnimationFrame(() => renderTaiwanTab()));
     });
   });
 
